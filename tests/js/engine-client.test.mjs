@@ -39,3 +39,24 @@ test('the worker is replaced after a big photo and after a crash', async () => {
   assert.deepEqual([r.ok, made.length], [false, 3]);
   assert.match(r.message, /engine stopped/);
 });
+
+test('stage messages reach onStage and do not end the call', async () => {
+  const made = [];
+  const makeWorker = () => {
+    const w = {
+      terminate() {},
+      postMessage(msg) {
+        setTimeout(() => {
+          for (const stage of ['reading', 'correcting', 'saving']) this.onmessage({ data: { id: msg.id, stage } });
+          this.onmessage({ data: { id: msg.id, ok: true, w: 1, h: 1 } });
+        });
+      },
+    };
+    made.push(w);
+    return w;
+  };
+  const stages = [];
+  const r = await createEngineClient({ makeWorker }).correct('a', 'ok', (s) => stages.push(s));
+  assert.deepEqual(stages, ['reading', 'correcting', 'saving']);
+  assert.equal(r.ok, true);
+});

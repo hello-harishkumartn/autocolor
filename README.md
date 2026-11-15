@@ -9,6 +9,7 @@ Live at https://harishkumartn.in/projects/autocolor/
 AutoColor measures each photo (brightness percentiles, highlight headroom, clipped pixels, colour cast from grey world and white patch estimates, colourfulness and noise) and only changes what measures out of range. From those measurements it sets exposure, white balance, shadows, highlights, black and white points, contrast, vibrance and noise reduction, then renders the photo in linear light with the develop pipeline of [LightCraft](https://github.com/storytold/lightcraft) compiled to WebAssembly. Photos that already look balanced are changed only a little.
 
 * Input: JPEG, PNG and WebP (drag and drop or file picker), HEIC where the browser can decode it (Safari), Google Drive files through the Google Picker. RAW is not supported.
+* Added photos wait as ready cards until you press Start correcting. Each card and the whole run show a progress bar.
 * Output: high quality JPEG at the original size named `<name>-autocolor.jpg`, one by one or as one zip. EXIF orientation is applied. Metadata is not copied.
 * Large photos: up to 12 MP (4 MP on phones) are rendered in one pass. Larger photos use a banded path that keeps memory near 4 bytes per pixel. The limit is 50 MP or what the browser's canvas allows.
 

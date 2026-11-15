@@ -1,0 +1,1 @@
+{ "name": "autocolor-tools", "private": true, "description": "Build tools only (wasm-opt). Not shipped.", "devDependencies": { "binaryen": "^125.0.0" } }

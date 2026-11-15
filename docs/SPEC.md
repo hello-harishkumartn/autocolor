@@ -31,10 +31,10 @@ Phone and camera photos often come out too dark, too bright, flat or tinted. Fix
 ## Critical User Journeys
 
 ### CUJ 1: Fix one photo
-User drops `IMG_1.jpg`. A card shows progress, then a before and after slider. User presses Download and gets `IMG_1-autocolor.jpg` at full size.
+User drops `IMG_1.jpg` and presses Start correcting (round 2). A card shows progress, then a before and after slider. User presses Download and gets `IMG_1-autocolor.jpg` at full size.
 
 ### CUJ 2: Fix a batch
-User selects 20 photos. They are corrected one after another with "3 of 20" progress. Each card has its own Download button. "Download all as zip" saves `autocolor-photos.zip`.
+User selects 20 photos and presses Start correcting. They are corrected one after another with "3 of 20" progress. Each card has its own Download button. "Download all as zip" saves `autocolor-photos.zip`.
 
 ### CUJ 3: Fix photos from Drive
 User presses "Choose from Google Drive", signs in, opens a folder in the Picker, selects the photos and confirms. The page downloads each file with the Drive API, corrects it and adds it to the list. Nothing is written back to Drive.
@@ -84,7 +84,7 @@ C ABI: `ac_alloc(len) -> ptr` (null when memory is short), `ac_free(ptr, len)`, 
 
 * Decodes with `createImageBitmap(blob, { imageOrientation: 'from-image', colorSpaceConversion: 'default', premultiplyAlpha: 'none' })`, so EXIF orientation is applied and colour managed input (Display P3 and other ICC profiles) arrives as sRGB. Transparent pixels are composited onto white before correction.
 * Types: JPEG, PNG and WebP by MIME type or extension. HEIC and HEIF (often an empty MIME type, so also by extension) are tried. If the browser cannot decode them the card says "HEIC is not supported by this browser. Open it in Safari or convert it to JPEG first." RAW extensions (dng, cr2, cr3, nef, arw, raf, orf, rw2) get "RAW files are not supported. Export a JPEG from your camera app first."
-* Size limits: photos over 50 MP get "This photo is N MP. AutoColor handles up to 50 MP." Each photo's canvas is checked by writing and reading back its last pixel (browsers that cannot hold a canvas that large return blank pixels). If that fails the card says "This photo is N MP, which is more than this browser can handle. Try a desktop browser." Above 40 MP the banded path is forced (the full path would pass 4 GB).
+* Size limits: photos over 50 MP get "This photo is N MP. AutoColor handles up to 50 MP." Each photo's canvas is checked by a read back probe that tolerates fingerprinting noise (see the Round 2 addendum). Above 40 MP the banded path is forced (the full path would pass 4 GB).
 * Path choice: full when the photo is at most 12 MP on desktop or 4 MP on phones (coarse pointer) and a probe allocation of `ac_full_bytes` through `ac_alloc` succeeds (it is freed at once and stays in the allocator's pool). Otherwise banded.
 * Encodes with `OffscreenCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 })`.
 * Returns the output blob, before and after previews (at most 1200 px) and the report. `engine-client.js` on the main thread owns the worker: it restarts it after any photo over 12 MP so WASM memory is returned and replaces it if it crashes.
@@ -92,7 +92,7 @@ C ABI: `ac_alloc(len) -> ptr` (null when memory is short), `ac_free(ptr, len)`, 
 ### Main thread (`app/`)
 
 * `app.js`: drop zone, file input, cards, compare slider (a range input over two stacked images), download links and zip button.
-* `queue.js`: runs jobs one at a time and reports progress. Testable without a browser.
+* `queue.js`: holds added photos until Start, runs them one at a time and reports progress per run. Testable without a browser.
 * `names.js`: output names `<base>-autocolor.jpg`, unique names inside a zip, supported type checks.
 * `zip.js`: store only zip writer (CRC32, UTF-8 flag, DOS date) that returns a Blob built from parts.
 * `engine-client.js`: the main thread's handle on the worker (see above).
@@ -161,3 +161,42 @@ C ABI: `ac_alloc(len) -> ptr` (null when memory is short), `ac_free(ptr, len)`, 
 ## Review notes
 
 Fresh context reviewers (implementation readiness, codebase details, comprehension) found: no numeric bands (added the table), undefined ABI values and errors (added), missing legal copy (added), LUT render must also zero noise reduction and use float output (done), band noise reduction must run on linear rows with scale 1 and no colour noise reduction (done), site tests hard code 7 projects and compare pages (both test files are now in the plan), missing alpha and colour space handling (added), Drive token renewal needs a click (added).
+
+## Round 2 addendum (2026-11-15): readback probe fix, Start button and progress
+
+### Grill (asked and answered without Harish, who was not available)
+
+* **Is the 1.2 MP failure about size?** No. Every desktop browser holds a 1.2 MP canvas (the smallest common limit is iOS Safari's 16,777,216 pixels). The probe demanded an exact read back of `#010203`. Running the real worker in Chrome with getImageData perturbed by plus or minus 1 (what Brave farbling and the Firefox and Safari fingerprinting protections do) gives Harish's exact message on a 1280x960 progressive WhatsApp style JPEG. Without the noise the same file is corrected.
+* **Should the probe go?** No. It still catches two real failures: canvases too large for the browser (blank pixels) and fully blocked readback (Firefox resistFingerprinting or Brave strict mode give white or random pixels). The output would be a blank photo in both cases.
+* **How is noise told apart from failure?** The probe writes two mid grey colours (channels 64 to 191) and reads them back. A difference of at most 32 levels counts as noise and the photo goes on. Blank (0) and white (255) reads are at least 64 away.
+* **Which message when it fails?** Above 16,777,216 pixels: the size message (without "Try a desktop browser"). At or below: a message that the browser is blocking access to photo pixels (a privacy setting), since size cannot be the reason there.
+* **Does the noise harm the output?** No. Plus or minus 2 levels on every input value leaves the engine's choices the same (exposure 0.80 against 0.79 EV) and the corrected photo differs from the clean result by 1.6 levels on average (PSNR 41.6 dB), which is the input noise carried through and is not visible. Real protections touch far fewer pixels.
+* **Other limit paths.** The 50 MP limit and the 12 MP and 4 MP path limits all compare pixel counts with pixel counts. The phone check (coarse pointer) and the `ac_alloc` probe only pick the banded path and never reject a photo. `navigator.deviceMemory` is not used. No other path can reject a small photo.
+* **Start button.** Adding photos (picker, drop or Drive) never starts work. Jobs wait as ready cards with a Remove button until Start is pressed. Photos added during a run wait for the next Start.
+* **Progress.** The engine call is one synchronous WASM call, so per photo progress is stage based: downloading (Drive only), reading, analysing and correcting, saving and done.
+
+### Behaviour
+
+* `app/readback.js`: `probeReadback(ctx, w, h)` runs before the white fill and the photo are drawn. It writes `#406080` at (0, h - 1) and `#806040` at (w - 1, h - 1) (only the first when w is 1), reads both back and returns the largest RGB difference. `judgeReadback(w, h, diff)` returns `ok`, `too-big` or `blocked` with `SAFE_AREA = 16_777_216` and `NOISE_TOLERANCE = 32`. The worker uses both. A probe that is off by up to 32 levels never rejects a photo. Messages: `too-big` gives "This photo is N MP, which is more than this browser can hold in memory. Try a smaller photo." and `blocked` gives "This browser is blocking access to the photo pixels, usually because of a privacy setting such as fingerprinting protection. Allow it for this site or try another browser." (`MESSAGES.blocked` in `names.js`).
+* Worker messages: `{ id, stage: 'reading' | 'correcting' | 'saving' }` before the final reply. `engine-client.correct(blob, kind, onStage)` passes stages on. A message with `stage` only calls `onStage`; the message without it ends the call.
+
+  | Stage | Sent by | Card bar (0 to 100) | Card text |
+  |---|---|---|---|
+  | ready | `add` | hidden | Ready (with Remove) |
+  | waiting | Start click | 0 | Waiting |
+  | downloading | `app.js`, Drive photos only | 5 | Downloading from Google Drive |
+  | reading | worker, before decoding | 15 | Reading |
+  | correcting | worker, before the previews and the engine call | 35 | Analysing and correcting |
+  | saving | worker, after the engine call | 85 | Saving |
+  | done or failed | `app.js` result handler | 100 | the summary or the error |
+* `queue.js` states: `empty` (nothing added), `ready` (jobs waiting for Start), `running`, `paused` (Drive reconnect) and `done`. `add` never starts work. `start()` moves every ready job into the run, resets the run counts and returns false when nothing is ready or a run is going. `remove(job)` drops a ready job. `onProgress({ done, total, state, ready })` fires on every change. `done` counts finished photos of the current run, failed ones included. `pause` and `resume` hold the current run (Drive reconnect) and `retry(jobs)` puts jobs back into the current run, not into the ready list. `reset` drops ready and waiting jobs and returns to `empty`. `idle` resolves when nothing is running or the queue is paused. `size` counts the current run only.
+* Page: a "Start correcting" button (primary, disabled when no photo is ready or while running) under the drop zone. An overall bar (`role="progressbar"`, `aria-valuemin` 0, `aria-valuemax` total, `aria-valuenow` done, `aria-valuetext` "3 of 10 corrected") and the existing `role="status"` live region that announces "Done: N of M photos corrected". Each card gets a bar (`role="progressbar"`, 0 to 100, value text the stage name) and a Remove button while ready. The status reads "Done: N of M photos corrected" where N counts successes in the run just finished. Clear is disabled while running or paused and removes every card, ready ones included. Remove takes the card off the page and hides the list when it was the last card. Removing every ready photo after a run returns to `done`, otherwise to `empty`.
+
+Review: one fresh context implementation readiness reviewer found 8 gaps (probe pattern, message text, stage table, stage message rule, queue methods, per run Done count, Clear and Remove, a photo and viewport size mix up). All are fixed above.
+
+### Tests
+
+* `tests/js/readback.test.mjs`: a stub context that adds plus or minus 1 or 2 accepts a 1.2 MP photo. Blank reads give `too-big` above the safe area and `blocked` below it.
+* `tests/js/queue.test.mjs`: add does not run, start gating, ready to running to done, counts per run, remove, photos added during a run wait.
+* `tests/js/engine-client.test.mjs`: stage messages reach `onStage` and do not end the call.
+* `tests/browser/run.sh`: Start is visible and enabled before processing, bars reach their max, single and zip downloads, the WhatsApp style photo (1280x960) at the 1280x900 and 390x844 viewports, the noise harness (`tests/browser/harness/`, local runs only) with plus or minus 2 noise and with blocked reads. `AUTOCOLOR_URL` runs the checks against another URL without the local server.

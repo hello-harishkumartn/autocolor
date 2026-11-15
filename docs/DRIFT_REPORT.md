@@ -63,3 +63,14 @@ AutoColor stores no personal data and has no backend. Photos are processed in th
 | 18 | Refunds and cancellation | Not applicable (free, no payments). |
 | 19 | Marketing claims | Accurate and tested: "never uploaded" (no upload code. Network use is the page itself and, on request, Google sign in, Picker and Drive downloads). "Changed only a little" for balanced photos is backed by the tests (mean deltaE00 at most 1.95 on 7 CC0 photos). No superlatives. |
 | 20 | Final legal audit | Items for a lawyer: (a) EU cookie consent for the Drive sign in flow (item 4), (b) Google API terms and branding before leaving Testing (items 10 and 15), (c) copyright in AI assisted code (item 11), (d) two fixtures show identifiable people (people.jpg and beach.jpg). They are CC0 but personality rights are separate from copyright. They are used only as test data in the repo. Low risk, noted. |
+
+## Round 2 drift note (2026-11-15)
+
+Checked the Round 2 addendum in `SPEC.md` against the code.
+
+* Readback probe: `app/readback.js` matches the spec (pattern, positions, `SAFE_AREA` 16,777,216, `NOISE_TOLERANCE` 32, messages). `worker.js` probes before the white fill. No drift.
+* Stages: the worker sends reading, correcting and saving. `app.js` adds waiting and downloading and uses the bar values in the stage table. No drift.
+* Queue: states, `start`, `remove`, `retry` into the current run and per run counts match. `size` counts the current run only, as specified.
+* Page: Start button, overall and card bars (`role="progressbar"` with min, max, now, value text and a label), the `role="status"` live region and Remove match. One small extra: the status also reads "N photos ready. Press Start correcting." while photos wait. This is not in the spec and is harmless.
+* Limits: the 50 MP, 40 MP, 12 MP and 4 MP limits are unchanged and only the 50 MP one rejects. The phone check only picks the path.
+* Legal check: no change. The Start flow adds no data collection, cookies, network requests or third party assets. The new message names fingerprinting protection without naming any browser vendor.

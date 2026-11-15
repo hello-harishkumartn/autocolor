@@ -1,0 +1,51 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>AutoColor readback noise harness</title>
+<script type="module">
+// ?photo=<url>&amp=N or &blocked=1: runs the real worker once with clean and once with noisy canvas
+// readback (noise.js) and stores the noisy reply in window.result, with how far the noisy output is
+// from the clean one (mean and largest per channel difference in levels).
+const q = new URLSearchParams(location.search);
+const noise = new URLSearchParams([...q].filter(([k]) => k !== 'photo')).toString();
+const template = await (await fetch('noisy-worker.js')).text();
+const blob = await (await fetch(q.get('photo'))).blob();
+
+function correct(noiseQuery) {
+  const src = template
+    .replace("'./noise.js?__Q__'", `'${new URL(`noise.js?${noiseQuery}`, location.href)}'`)
+    .replace("'../worker.js'", `'${new URL('../worker.js', location.href)}'`);
+  const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' });
+  return new Promise((resolve) => {
+    w.onmessage = ({ data }) => data.stage || (w.terminate(), resolve(data));
+    w.postMessage({ id: 1, blob, kind: 'ok', phone: false });
+  });
+}
+
+async function pixels(b) {
+  const bmp = await createImageBitmap(b);
+  const c = new OffscreenCanvas(bmp.width, bmp.height);
+  c.getContext('2d').drawImage(bmp, 0, 0);
+  return c.getContext('2d').getImageData(0, 0, bmp.width, bmp.height).data;
+}
+
+const clean = await correct('amp=0');
+const noisy = await correct(noise);
+const result = { ok: noisy.ok, message: noisy.message };
+if (noisy.ok && clean.ok) {
+  const [a, b] = await Promise.all([pixels(clean.out), pixels(noisy.out)]);
+  let sum = 0;
+  let max = 0;
+  let sq = 0;
+  for (let i = 0; i < a.length; i++) {
+    if (i % 4 === 3) continue;
+    const d = Math.abs(a[i] - b[i]);
+    sum += d;
+    sq += d * d;
+    max = Math.max(max, d);
+  }
+  Object.assign(result, { w: noisy.w, h: noisy.h, path: noisy.report.path, meanDiff: +(sum / (a.length * 0.75)).toFixed(3), maxDiff: max, psnr: +(10 * Math.log10((255 * 255) / (sq / (a.length * 0.75)))).toFixed(1) });
+  result.choice = Object.fromEntries(Object.keys(clean.report.choice).map((k) => [k, [clean.report.choice[k], noisy.report.choice[k]].map((v) => +v.toFixed(3))]));
+}
+window.result = result;
+document.title = 'done';
+</script>

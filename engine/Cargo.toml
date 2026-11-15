@@ -1,0 +1,36 @@
+[package]
+name = "autocolor-engine"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Automatic photo colour correction on top of the LightCraft develop pipeline, for WebAssembly."
+repository = "https://github.com/hello-harishkumartn/autocolor"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# LightCraft (MIT OR Apache-2.0), pinned to the commit AutoColor was built and tested against.
+# For offline builds against a local clone see engine/.cargo/config.toml.example.
+[dependencies]
+lightcraft-pipeline = { git = "https://github.com/storytold/lightcraft", rev = "80de5f8faee3bfe33202d0f8373122645dba2988" }
+lightcraft-develop = { git = "https://github.com/storytold/lightcraft", rev = "80de5f8faee3bfe33202d0f8373122645dba2988" }
+lightcraft-raster = { git = "https://github.com/storytold/lightcraft", rev = "80de5f8faee3bfe33202d0f8373122645dba2988" }
+lightcraft-color = { git = "https://github.com/storytold/lightcraft", rev = "80de5f8faee3bfe33202d0f8373122645dba2988" }
+lightcraft-geom = { git = "https://github.com/storytold/lightcraft", rev = "80de5f8faee3bfe33202d0f8373122645dba2988" }
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Tests decode JPEGs and run the pipeline; keep them fast.
+[profile.test]
+opt-level = 3
+[profile.dev.package."*"]
+opt-level = 3

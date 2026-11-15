@@ -1,0 +1,8 @@
+# Copy to engine/.cargo/config.toml to build against a local LightCraft clone
+# (same commit as Cargo.toml) instead of fetching it from GitHub.
+[patch."https://github.com/storytold/lightcraft"]
+lightcraft-pipeline = { path = "/tmp/lightcraft/crates/pipeline" }
+lightcraft-develop = { path = "/tmp/lightcraft/crates/develop" }
+lightcraft-raster = { path = "/tmp/lightcraft/crates/raster" }
+lightcraft-color = { path = "/tmp/lightcraft/crates/color" }
+lightcraft-geom = { path = "/tmp/lightcraft/crates/geom" }
